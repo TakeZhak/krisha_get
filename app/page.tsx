@@ -4,10 +4,10 @@ import { FormEvent, useState } from "react";
 
 const defaultValues = {
   startUrl: "https://krisha.kz/prodazha/kvartiry/",
-  pages: 2,
-  limit: 30,
-  delayMin: 1,
-  delayMax: 2.5,
+  pages: "2",
+  limit: "30",
+  delayMin: "1",
+  delayMax: "2.5",
   outputName: "krisha_export.csv"
 };
 
@@ -20,10 +20,41 @@ export default function HomePage() {
   const [outputName, setOutputName] = useState(defaultValues.outputName);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showValidation, setShowValidation] = useState(false);
+
+  const numericValidation = {
+    pages: pages.trim() === "",
+    limit: limit.trim() === "",
+    delayMin: delayMin.trim() === "",
+    delayMax: delayMax.trim() === ""
+  };
+
+  const hasValidationErrors = Object.values(numericValidation).some(Boolean);
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
+    setShowValidation(true);
+
+    if (hasValidationErrors) {
+      return;
+    }
+
+    const pagesValue = Number(pages);
+    const limitValue = Number(limit);
+    const delayMinValue = Number(delayMin);
+    const delayMaxValue = Number(delayMax);
+
+    if (
+      Number.isNaN(pagesValue) ||
+      Number.isNaN(limitValue) ||
+      Number.isNaN(delayMinValue) ||
+      Number.isNaN(delayMaxValue)
+    ) {
+      setError("Проверьте числовые поля: заполните их корректными числами.");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -34,10 +65,10 @@ export default function HomePage() {
         },
         body: JSON.stringify({
           startUrl,
-          pages,
-          limit,
-          delayMin,
-          delayMax
+          pages: pagesValue,
+          limit: limitValue,
+          delayMin: delayMinValue,
+          delayMax: delayMaxValue
         })
       });
 
@@ -96,9 +127,13 @@ export default function HomePage() {
               min={1}
               max={30}
               value={pages}
-              onChange={(e) => setPages(Number(e.target.value))}
+              onChange={(e) => setPages(e.target.value)}
+              className={showValidation && numericValidation.pages ? "input-error" : ""}
               required
             />
+            {showValidation && numericValidation.pages ? (
+              <span className="field-error">Нельзя оставлять пустым</span>
+            ) : null}
           </div>
 
           <div className="field">
@@ -108,9 +143,13 @@ export default function HomePage() {
               type="number"
               min={0}
               value={limit}
-              onChange={(e) => setLimit(Number(e.target.value))}
+              onChange={(e) => setLimit(e.target.value)}
+              className={showValidation && numericValidation.limit ? "input-error" : ""}
               required
             />
+            {showValidation && numericValidation.limit ? (
+              <span className="field-error">Нельзя оставлять пустым</span>
+            ) : null}
           </div>
 
           <div className="field">
@@ -121,9 +160,13 @@ export default function HomePage() {
               min={0}
               step={0.1}
               value={delayMin}
-              onChange={(e) => setDelayMin(Number(e.target.value))}
+              onChange={(e) => setDelayMin(e.target.value)}
+              className={showValidation && numericValidation.delayMin ? "input-error" : ""}
               required
             />
+            {showValidation && numericValidation.delayMin ? (
+              <span className="field-error">Нельзя оставлять пустым</span>
+            ) : null}
           </div>
 
           <div className="field">
@@ -134,9 +177,13 @@ export default function HomePage() {
               min={0}
               step={0.1}
               value={delayMax}
-              onChange={(e) => setDelayMax(Number(e.target.value))}
+              onChange={(e) => setDelayMax(e.target.value)}
+              className={showValidation && numericValidation.delayMax ? "input-error" : ""}
               required
             />
+            {showValidation && numericValidation.delayMax ? (
+              <span className="field-error">Нельзя оставлять пустым</span>
+            ) : null}
           </div>
 
           <div className="field full">
