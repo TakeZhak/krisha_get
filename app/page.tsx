@@ -30,6 +30,18 @@ export default function HomePage() {
   };
 
   const hasValidationErrors = Object.values(numericValidation).some(Boolean);
+  const integerInput = (value: string) => value.replace(/[^\d]/g, "");
+  const decimalInput = (value: string) => {
+    const normalized = value.replace(",", ".").replace(/[^\d.]/g, "");
+    const firstDot = normalized.indexOf(".");
+    if (firstDot === -1) {
+      return normalized;
+    }
+    return (
+      normalized.slice(0, firstDot + 1) +
+      normalized.slice(firstDot + 1).replace(/\./g, "")
+    );
+  };
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -123,11 +135,11 @@ export default function HomePage() {
             <label htmlFor="pages">Сколько страниц обходить</label>
             <input
               id="pages"
-              type="number"
-              min={1}
-              max={30}
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
               value={pages}
-              onChange={(e) => setPages(e.target.value)}
+              onChange={(e) => setPages(integerInput(e.target.value))}
               className={showValidation && numericValidation.pages ? "input-error" : ""}
               required
             />
@@ -140,10 +152,11 @@ export default function HomePage() {
             <label htmlFor="limit">Лимит объявлений (0 = без лимита)</label>
             <input
               id="limit"
-              type="number"
-              min={0}
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
               value={limit}
-              onChange={(e) => setLimit(e.target.value)}
+              onChange={(e) => setLimit(integerInput(e.target.value))}
               className={showValidation && numericValidation.limit ? "input-error" : ""}
               required
             />
@@ -156,11 +169,11 @@ export default function HomePage() {
             <label htmlFor="delayMin">Задержка мин (сек)</label>
             <input
               id="delayMin"
-              type="number"
-              min={0}
-              step={0.1}
+              type="text"
+              inputMode="decimal"
+              pattern="^[0-9]+([.][0-9]+)?$"
               value={delayMin}
-              onChange={(e) => setDelayMin(e.target.value)}
+              onChange={(e) => setDelayMin(decimalInput(e.target.value))}
               className={showValidation && numericValidation.delayMin ? "input-error" : ""}
               required
             />
@@ -173,11 +186,11 @@ export default function HomePage() {
             <label htmlFor="delayMax">Задержка макс (сек)</label>
             <input
               id="delayMax"
-              type="number"
-              min={0}
-              step={0.1}
+              type="text"
+              inputMode="decimal"
+              pattern="^[0-9]+([.][0-9]+)?$"
               value={delayMax}
-              onChange={(e) => setDelayMax(e.target.value)}
+              onChange={(e) => setDelayMax(decimalInput(e.target.value))}
               className={showValidation && numericValidation.delayMax ? "input-error" : ""}
               required
             />
