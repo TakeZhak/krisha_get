@@ -5,7 +5,7 @@ import { FormEvent, useState } from "react";
 const defaultValues = {
   startUrl: "https://krisha.kz/prodazha/kvartiry/",
   pages: "2",
-  limit: "30",
+  limit: "60",
   delayMin: "1",
   delayMax: "2.5",
   outputName: "krisha_export.csv"
@@ -132,7 +132,7 @@ export default function HomePage() {
           </div>
 
           <div className="field">
-            <label htmlFor="pages">Сколько страниц обходить</label>
+            <label htmlFor="pages">Сколько страниц обходить (до 5)</label>
             <input
               id="pages"
               type="text"
@@ -149,7 +149,7 @@ export default function HomePage() {
           </div>
 
           <div className="field">
-            <label htmlFor="limit">Лимит объявлений (0 = без лимита)</label>
+            <label htmlFor="limit">Лимит объявлений (1-120)</label>
             <input
               id="limit"
               type="text"
@@ -216,8 +216,9 @@ export default function HomePage() {
       </form>
 
       <p className="hint">
-        Поля в выгрузке: <b>url</b>, <b>price</b>, <b>address</b>, <b>area_m2</b>,
-        <b>author_name</b>, <b>author_company</b>.
+        Поля в выгрузке: <b>url</b>, <b>price</b>, <b>price_per_m2</b>, <b>address</b>,{" "}
+        <b>area_m2</b>, <b>author_name</b>, <b>author_company</b>. Для Vercel
+        ставь до 5 страниц и лимит до 120, иначе возможен timeout (504).
       </p>
 
       {error ? <p className="error">{error}</p> : null}

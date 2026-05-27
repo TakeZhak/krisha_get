@@ -2,10 +2,13 @@ import { load } from "cheerio";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
+const SAFE_MAX_PAGES = 5;
+const SAFE_MAX_LISTINGS = 120;
 
 type Listing = {
   url: string;
   price: number | null;
+  price_per_m2: number | null;
   address: string;
   area_m2: number | null;
   author_name: string;
@@ -44,6 +47,15 @@ function parsePrice(raw: string): number | null {
     return null;
   }
   const normalized = chunks[0].replace(/[^\d]/g, "");
+  return normalized ? Number(normalized) : null;
+}
+
+function parsePricePerM2(raw: string): number | null {
+  const match = raw.match(/(\d[\d\s.,]*)\s*〒?\s*за\s*м²/i);
+  if (!match?.[1]) {
+    return null;
+  }
+  const normalized = match[1].replace(/[^\d]/g, "");
   return normalized ? Number(normalized) : null;
 }
 
@@ -157,6 +169,7 @@ function parseDetail(url: string, html: string): Listing {
 
   const priceText = $(".offer__price").first().text().trim();
   const price = parsePrice(priceText);
+  const pricePerM2 = parsePricePerM2(priceText);
 
   let address = $(".offer__location-title").first().text().trim();
   if (!address && h1) {
@@ -190,6 +203,7 @@ function parseDetail(url: string, html: string): Listing {
   return {
     url,
     price,
+    price_per_m2: pricePerM2,
     address,
     area_m2: area,
     author_name: authorName,
@@ -201,15 +215,49 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json()) as RequestPayload;
     const startUrl = (body.startUrl ?? "").trim();
-    const pages = Math.max(1, Math.min(Number(body.pages ?? 2), 30));
-    const limitRaw = Number(body.limit ?? 30);
-    const limit = limitRaw === 0 ? Number.POSITIVE_INFINITY : Math.max(1, limitRaw);
+    const requestedPages = Number(body.pages ?? 2);
+    const requestedLimit = Number(body.limit ?? 30);
+    const pages = Math.max(1, Math.min(requestedPages, SAFE_MAX_PAGES));
+    const limitRaw =
+      requestedLimit === 0
+        ? SAFE_MAX_LISTINGS
+        : Math.max(1, Math.min(requestedLimit, SAFE_MAX_LISTINGS));
+    const limit = limitRaw;
     const delayMin = Math.max(0, Number(body.delayMin ?? 1));
     const delayMax = Math.max(delayMin, Number(body.delayMax ?? 2.5));
 
     if (!startUrl.startsWith("http")) {
       return Response.json(
         { error: "Укажите корректный startUrl (http/https)." },
+        { status: 400 }
+      );
+    }
+
+    if (requestedPages > SAFE_MAX_PAGES) {
+      return Response.json(
+        {
+          error: `Слишком много страниц для веб-версии Vercel. Максимум: ${SAFE_MAX_PAGES}.`
+        },
+        { status: 400 }
+      );
+    }
+
+    if (requestedLimit === 0) {
+      return Response.json(
+        {
+          error:
+            `Параметр limit=0 (без лимита) в веб-версии может вызвать таймаут. ` +
+            `Укажите лимит до ${SAFE_MAX_LISTINGS}.`
+        },
+        { status: 400 }
+      );
+    }
+
+    if (requestedLimit > SAFE_MAX_LISTINGS) {
+      return Response.json(
+        {
+          error: `Слишком большой лимит объявлений. Максимум: ${SAFE_MAX_LISTINGS}.`
+        },
         { status: 400 }
       );
     }
@@ -248,6 +296,7 @@ export async function POST(request: Request) {
     const header = [
       "url",
       "price",
+      "price_per_m2",
       "address",
       "area_m2",
       "author_name",
@@ -257,6 +306,7 @@ export async function POST(request: Request) {
       [
         csvEscape(item.url),
         csvEscape(item.price),
+        csvEscape(item.price_per_m2),
         csvEscape(item.address),
         csvEscape(item.area_m2),
         csvEscape(item.author_name),

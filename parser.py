@@ -4,8 +4,8 @@ import random
 import re
 import time
 from dataclasses import dataclass, asdict
-from typing import Iterable, List, Optional
-from urllib.parse import urljoin
+from typing import Callable, Iterable, List, Optional
+from urllib.parse import parse_qs, urlencode, urljoin, urlparse, urlunparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -28,6 +28,7 @@ USER_AGENTS = [
 class Listing:
     url: str
     price: Optional[int]
+    price_per_m2: Optional[int]
     address: str
     area_m2: Optional[float]
     author_name: str
@@ -60,6 +61,12 @@ class KrishaScraper:
         if self.delay_max > 0:
             time.sleep(random.uniform(self.delay_min, self.delay_max))
 
+    @staticmethod
+    def _emit(message: str, log_callback: Optional[Callable[[str], None]]) -> None:
+        print(message)
+        if log_callback:
+            log_callback(message)
+
     def fetch(self, url: str) -> str:
         last_error = None
         for attempt in range(1, self.retries + 1):
@@ -86,7 +93,8 @@ class KrishaScraper:
     def parse_listing_links(html: str, base_url: str) -> List[str]:
         soup = BeautifulSoup(html, "html.parser")
         links = set()
-        for a_tag in soup.select("a[href*='/a/show/']"):
+        # Keep only links from search cards; generic /a/show/ picks up many unrelated blocks.
+        for a_tag in soup.select(".a-card__header-left a.a-card__title[href*='/a/show/']"):
             href = a_tag.get("href")
             if href:
                 links.add(urljoin(base_url, href))
@@ -99,6 +107,34 @@ class KrishaScraper:
         if next_link and next_link.get("href"):
             return urljoin(base_url, next_link["href"])
         return None
+
+    @staticmethod
+    def _get_start_page(url: str) -> int:
+        parsed = urlparse(url)
+        query = parse_qs(parsed.query)
+        raw_page = query.get("page", ["1"])[0]
+        try:
+            page = int(raw_page)
+            return max(page, 1)
+        except ValueError:
+            return 1
+
+    @staticmethod
+    def _set_page(url: str, page: int) -> str:
+        parsed = urlparse(url)
+        query = parse_qs(parsed.query, keep_blank_values=True)
+        query["page"] = [str(page)]
+        new_query = urlencode(query, doseq=True)
+        return urlunparse(
+            (
+                parsed.scheme,
+                parsed.netloc,
+                parsed.path,
+                parsed.params,
+                new_query,
+                parsed.fragment,
+            )
+        )
 
     @staticmethod
     def _extract_text_by_label(soup: BeautifulSoup, label: str) -> str:
@@ -129,6 +165,17 @@ class KrishaScraper:
         if not parts:
             return None
         digits = re.sub(r"[^\d]", "", parts[0])
+        return int(digits) if digits else None
+
+    @staticmethod
+    def _parse_price_per_m2(raw: str) -> Optional[int]:
+        # Example: "170 000 за месяц / 8 500 за м²" -> 8500
+        if not raw:
+            return None
+        match = re.search(r"(\d[\d\s.,]*)\s*〒?\s*за\s*м²", raw, flags=re.IGNORECASE)
+        if not match:
+            return None
+        digits = re.sub(r"[^\d]", "", match.group(1))
         return int(digits) if digits else None
 
     @staticmethod
@@ -238,47 +285,69 @@ class KrishaScraper:
         return Listing(
             url=url,
             price=self._parse_price(price_text),
+            price_per_m2=self._parse_price_per_m2(price_text),
             address=address,
             area_m2=area_value,
             author_name=author_name,
             author_company=self._normalize_company(author_company),
         )
 
-    def iterate_listing_urls(self, pages_limit: int) -> Iterable[str]:
-        current_url = self.start_url
+    def iterate_listing_urls(
+        self,
+        pages_limit: int,
+        log_callback: Optional[Callable[[str], None]] = None,
+    ) -> Iterable[str]:
+        start_page = self._get_start_page(self.start_url)
         page_count = 0
         seen = set()
 
-        while current_url and page_count < pages_limit:
+        while page_count < pages_limit:
+            current_page = start_page + page_count
+            current_url = self._set_page(self.start_url, current_page)
             page_count += 1
-            print(f"[INFO] Parsing list page {page_count}: {current_url}")
+            self._emit(f"[INFO] Parsing list page {page_count}: {current_url}", log_callback)
             html = self.fetch(current_url)
             links = self.parse_listing_links(html, current_url)
-            print(f"[INFO] Found {len(links)} listing links")
+            self._emit(f"[INFO] Found {len(links)} listing links", log_callback)
+
+            if not links:
+                self._emit("[INFO] No listing links found, stopping pagination.", log_callback)
+                break
 
             for link in links:
                 if link not in seen:
                     seen.add(link)
                     yield link
 
-            current_url = self.parse_next_page(html, current_url)
             self._sleep()
 
-    def run(self, pages_limit: int, listings_limit: Optional[int]) -> List[Listing]:
+    def run(
+        self,
+        pages_limit: int,
+        listings_limit: Optional[int],
+        progress_callback: Optional[Callable[[int, Optional[int]], None]] = None,
+        log_callback: Optional[Callable[[str], None]] = None,
+    ) -> List[Listing]:
         results: List[Listing] = []
 
-        for listing_url in self.iterate_listing_urls(pages_limit=pages_limit):
+        for listing_url in self.iterate_listing_urls(
+            pages_limit=pages_limit,
+            log_callback=log_callback,
+        ):
             if listings_limit is not None and len(results) >= listings_limit:
                 break
 
             try:
-                print(f"[INFO] Parsing listing: {listing_url}")
+                self._emit(f"[INFO] Parsing listing: {listing_url}", log_callback)
                 detail_html = self.fetch(listing_url)
                 listing = self.parse_listing_detail(listing_url, detail_html)
                 results.append(listing)
+                self._emit(f"[OK] Parsed listing #{len(results)}: {listing_url}", log_callback)
+                if progress_callback:
+                    progress_callback(len(results), listings_limit)
                 self._sleep()
             except Exception as error:  # noqa: BLE001
-                print(f"[WARN] Skip {listing_url}: {error}")
+                self._emit(f"[WARN] Skip {listing_url}: {error}", log_callback)
 
         return results
 
@@ -287,6 +356,7 @@ def save_to_csv(path: str, rows: List[Listing]) -> None:
     fieldnames = [
         "url",
         "price",
+        "price_per_m2",
         "address",
         "area_m2",
         "author_name",
